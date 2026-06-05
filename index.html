@@ -224,6 +224,11 @@
                   <div class="corner-border bottom-right"></div>
                 </div>
 
+                <!-- Terminal Guidance Prompt -->
+                <div class="terminal-guide-overlay" id="terminal-guide-overlay">
+                  <div class="terminal-guide-prompt" id="terminal-guide-prompt">Scan face to start</div>
+                </div>
+
                 <!-- Match Overlay UI -->
                 <div class="match-result-overlay" id="match-overlay">
                   <div class="overlay-card success" id="match-overlay-success" style="display: none;">
@@ -409,6 +414,9 @@
               <div class="enrollment-actions">
                 <button class="btn btn-secondary" id="btn-start-capture">
                   <i class="ti ti-video"></i> Start Face Capture
+                </button>
+                <button class="btn btn-primary" id="btn-manual-capture" style="display: none;">
+                  <i class="ti ti-camera"></i> Capture Current Angle
                 </button>
                 <button class="btn btn-danger" id="btn-reset-capture" style="display: none;">
                   <i class="ti ti-refresh"></i> Reset Captures

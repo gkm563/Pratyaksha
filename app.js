@@ -36,6 +36,20 @@ const state = {
   enrollmentSamples: [null, null, null, null, null], // Face descriptors for each angle
 };
 
+// --- Canvas Auto-Resize Helper ---
+function syncCanvasSize(video, canvas) {
+  if (!video || !canvas) return { width: 640, height: 480 };
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  if (w && h && (canvas.width !== w || canvas.height !== h)) {
+    canvas.width = w;
+    canvas.height = h;
+    faceapi.matchDimensions(canvas, { width: w, height: h });
+    console.log(`[Canvas] Resized canvas to match video feed: ${w}x${h}`);
+  }
+  return { width: canvas.width || 640, height: canvas.height || 480 };
+}
+
 // --- Console Log Helper ---
 function sysLog(message, type = 'info') {
   const consoleEl = document.getElementById('system-console');
@@ -59,6 +73,81 @@ function playFeedback(success) {
     audio.currentTime = 0;
     audio.play().catch(e => console.log('Audio playback blocked: ', e));
   }
+}
+
+// --- Futuristic Biometric Face Mesh Overlay ---
+function drawBiometricFacemask(ctx, landmarks, displaySize, isMatch) {
+  const points = landmarks.positions;
+  
+  ctx.save();
+  
+  // Custom glowing styling based on match status
+  ctx.shadowColor = isMatch ? "#10B981" : "#3B82F6";
+  ctx.shadowBlur = 6;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = isMatch ? "rgba(16, 185, 129, 0.45)" : "rgba(59, 130, 246, 0.45)";
+  
+  const drawPath = (indices, close = false) => {
+    if (!indices || indices.length === 0) return;
+    ctx.beginPath();
+    ctx.moveTo(points[indices[0]].x, points[indices[0]].y);
+    for (let i = 1; i < indices.length; i++) {
+      ctx.lineTo(points[indices[i]].x, points[indices[i]].y);
+    }
+    if (close) ctx.closePath();
+    ctx.stroke();
+  };
+  
+  // 1. Jaw Line (0 to 16)
+  drawPath(Array.from({length: 17}, (_, i) => i));
+  
+  // 2. Eyebrows (17-21, 22-26)
+  drawPath(Array.from({length: 5}, (_, i) => i + 17));
+  drawPath(Array.from({length: 5}, (_, i) => i + 22));
+  
+  // 3. Nose Bridge & Base (27-30, 30-35)
+  drawPath([27, 28, 29, 30]);
+  drawPath([30, 31, 32, 33, 34, 35], true);
+  
+  // 4. Eyes (36-41, 42-47)
+  drawPath(Array.from({length: 6}, (_, i) => i + 36), true);
+  drawPath(Array.from({length: 6}, (_, i) => i + 42), true);
+  
+  // 5. Lips (48-59 outer, 60-67 inner)
+  drawPath(Array.from({length: 12}, (_, i) => i + 48), true);
+  drawPath(Array.from({length: 8}, (_, i) => i + 60), true);
+  
+  // 6. Draw Glowing Eye Circles (Pupils)
+  const drawEyeCircle = (indices) => {
+    let sumX = 0, sumY = 0;
+    indices.forEach(idx => {
+      sumX += points[idx].x;
+      sumY += points[idx].y;
+    });
+    const centerX = sumX / indices.length;
+    const centerY = sumY / indices.length;
+    
+    // Glowing Outer Pupil Ring
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 14, 0, 2 * Math.PI);
+    ctx.strokeStyle = "rgba(16, 185, 129, 0.85)"; // glowing green for eyes
+    ctx.shadowColor = "#10B981";
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = "#10B981";
+    ctx.shadowBlur = 4;
+    ctx.fill();
+  };
+  
+  drawEyeCircle([36, 37, 38, 39, 40, 41]);
+  drawEyeCircle([42, 43, 44, 45, 46, 47]);
+  
+  ctx.restore();
 }
 
 /* ==========================================================================
@@ -259,7 +348,7 @@ const bioEngine = {
     return bestMatch;
   },
 
-  // Estimate Pose ratio: Jaw to nose distance ratios
+  // Estimate Pose ratio: normalized Yaw & relative-Y project Pitch (extremely stable!)
   estimatePose(landmarks) {
     const jaw = landmarks.getJawOutline();
     const nose = landmarks.getNose();
@@ -271,24 +360,23 @@ const bioEngine = {
     const chin = jaw[8];
 
     // Horizontal ratio (Yaw)
-    const distLeft = Math.hypot(noseTip.x - outerLeft.x, noseTip.y - outerLeft.y);
-    const distRight = Math.hypot(noseTip.x - outerRight.x, noseTip.y - outerRight.y);
+    const distLeft = Math.abs(noseTip.x - outerLeft.x);
+    const distRight = Math.abs(outerRight.x - noseTip.x);
     const yawRatio = distLeft / distRight;
 
-    // Vertical ratio (Pitch)
-    const topDist = Math.hypot(noseBridge.x - noseTip.x, noseBridge.y - noseTip.y);
-    const bottomDist = Math.hypot(chin.x - noseTip.x, chin.y - noseTip.y);
-    const pitchRatio = topDist / bottomDist;
+    // Vertical ratio (Pitch) - relative Nose-Y height in Face projection range
+    const verticalRange = chin.y - noseBridge.y;
+    const relativeNoseY = (noseTip.y - noseBridge.y) / verticalRange;
 
     let yawLabel = 'Front';
-    if (yawRatio < 0.70) yawLabel = 'Left';
-    else if (yawRatio > 1.45) yawLabel = 'Right';
+    if (yawRatio < 0.82) yawLabel = 'Left';
+    else if (yawRatio > 1.22) yawLabel = 'Right';
 
     let pitchLabel = 'Center';
-    if (pitchRatio < 0.22) pitchLabel = 'Up';
-    else if (pitchRatio > 0.65) pitchLabel = 'Down';
+    if (relativeNoseY < 0.29) pitchLabel = 'Up';
+    else if (relativeNoseY > 0.41) pitchLabel = 'Down';
 
-    return { yawRatio, pitchRatio, yawLabel, pitchLabel };
+    return { yawRatio, pitchRatio: relativeNoseY, yawLabel, pitchLabel };
   },
 
   // Compute Eye Aspect Ratio (EAR) for blink detection
@@ -416,6 +504,7 @@ const uiController = {
 
     // Enrollment button listeners
     document.getElementById('btn-start-capture').addEventListener('click', () => this.startEnrollmentCaptureWorkflow());
+    document.getElementById('btn-manual-capture').addEventListener('click', () => this.captureAngleManually());
     document.getElementById('btn-reset-capture').addEventListener('click', () => this.resetEnrollmentCaptures());
     document.getElementById('enrollment-form').addEventListener('submit', () => this.submitEnrollmentForm());
 
@@ -719,14 +808,17 @@ const uiController = {
   startTerminalInferenceLoop() {
     const video = document.getElementById('terminal-video');
     const canvas = document.getElementById('terminal-canvas');
-    const displaySize = { width: video.videoWidth || 640, height: video.videoHeight || 480 };
-    
-    faceapi.matchDimensions(canvas, displaySize);
+    const terminalPrompt = document.getElementById('terminal-guide-prompt');
     
     // Clear checklist visual states
     this.updateChecklistItem('check-face-detected', 'idle');
     this.updateChecklistItem('check-liveness-passed', 'idle');
     this.updateChecklistItem('check-match-found', 'idle');
+
+    if (terminalPrompt) {
+      terminalPrompt.innerText = 'Awaiting face...';
+      terminalPrompt.className = 'terminal-guide-prompt';
+    }
 
     state.landmarkHistory = [];
     state.livenessBlinked = false;
@@ -752,21 +844,56 @@ const uiController = {
           // 1. Check Face Detected
           this.updateChecklistItem('check-face-detected', 'passed');
           
-          // Draw bounding box
+          // Dynamically scale canvas to match the video's actual resolution
+          const displaySize = syncCanvasSize(video, canvas);
           const resizedResult = faceapi.resizeResults(result, displaySize);
-          ctx.beginPath();
-          ctx.lineWidth = "3";
-          ctx.strokeStyle = state.livenessBlinked && state.livenessVariancePassed ? "#10B981" : "#3B82F6";
+          const isLivenessPass = state.livenessBlinked && state.livenessVariancePassed;
+          
+          // Draw the advanced biometric wireframe facemask and eye circles
+          drawBiometricFacemask(ctx, resizedResult.landmarks, displaySize, isLivenessPass);
+          
+          // Draw bounding box corner brackets
+          ctx.save();
+          ctx.strokeStyle = isLivenessPass ? "#10B981" : "#3B82F6";
+          ctx.lineWidth = 2.5;
           const box = resizedResult.detection.box;
-          // Note: coordinates are mirrored in CSS, canvas elements are mirrored too
-          ctx.rect(box.x, box.y, box.width, box.height);
+          const bracketLen = Math.min(22, box.width * 0.15);
+          
+          // Top-Left bracket
+          ctx.beginPath();
+          ctx.moveTo(box.x + bracketLen, box.y);
+          ctx.lineTo(box.x, box.y);
+          ctx.lineTo(box.x, box.y + bracketLen);
           ctx.stroke();
+          
+          // Top-Right bracket
+          ctx.beginPath();
+          ctx.moveTo(box.x + box.width - bracketLen, box.y);
+          ctx.lineTo(box.x + box.width, box.y);
+          ctx.lineTo(box.x + box.width, box.y + bracketLen);
+          ctx.stroke();
+          
+          // Bottom-Left bracket
+          ctx.beginPath();
+          ctx.moveTo(box.x, box.y + box.height - bracketLen);
+          ctx.lineTo(box.x, box.y + box.height);
+          ctx.lineTo(box.x + bracketLen, box.y + box.height);
+          ctx.stroke();
+          
+          // Bottom-Right bracket
+          ctx.beginPath();
+          ctx.moveTo(box.x + box.width - bracketLen, box.y + box.height);
+          ctx.lineTo(box.x + box.width, box.y + box.height);
+          ctx.lineTo(box.x + box.width, box.y + box.height - bracketLen);
+          ctx.stroke();
+          ctx.restore();
 
-          // Draw head pose estimate labels for diagnostics
+          // Draw head pose and face accuracy scores
           const pose = bioEngine.estimatePose(result.landmarks);
           ctx.fillStyle = "#FFFFFF";
-          ctx.font = "12px JetBrains Mono";
-          ctx.fillText(`Pose: ${pose.yawLabel} (${pose.yawRatio.toFixed(2)}), ${pose.pitchLabel} (${pose.pitchRatio.toFixed(2)})`, box.x, box.y - 10);
+          ctx.font = "11px JetBrains Mono";
+          ctx.fillText(`Scanner Accuracy: ${Math.round(result.detection.score * 100)}%`, box.x, box.y - 25);
+          ctx.fillText(`Pose: Yaw: ${pose.yawRatio.toFixed(2)} (${pose.yawLabel}), Pitch: ${pose.pitchRatio.toFixed(2)} (${pose.pitchLabel})`, box.x, box.y - 10);
 
           if (!state.isProcessingVerification) {
             // Keep history of nose tips for micro-movement variance
@@ -798,6 +925,23 @@ const uiController = {
               this.updateChecklistItem('check-liveness-passed', 'passed');
             } else {
               this.updateChecklistItem('check-liveness-passed', 'active');
+            }
+
+            // Update dynamic terminal guidance prompt based on liveness state
+            if (terminalPrompt) {
+              if (!state.livenessBlinked && !state.livenessVariancePassed) {
+                terminalPrompt.innerText = '👀 Please BLINK your eyes to verify liveness.';
+                terminalPrompt.className = 'terminal-guide-prompt warning';
+              } else if (state.livenessBlinked && !state.livenessVariancePassed) {
+                terminalPrompt.innerText = '👋 Please move your head slightly.';
+                terminalPrompt.className = 'terminal-guide-prompt warning';
+              } else if (!state.livenessBlinked && state.livenessVariancePassed) {
+                terminalPrompt.innerText = '👀 Please BLINK your eyes.';
+                terminalPrompt.className = 'terminal-guide-prompt warning';
+              } else {
+                terminalPrompt.innerText = '🟢 Verifying identity...';
+                terminalPrompt.className = 'terminal-guide-prompt success';
+              }
             }
 
             // 3. Biometric matching once liveness passes
@@ -838,6 +982,11 @@ const uiController = {
           this.updateChecklistItem('check-match-found', 'idle');
           document.getElementById('liveness-score').style.display = 'none';
           document.getElementById('confidence-score').style.display = 'none';
+          
+          if (terminalPrompt && !state.isProcessingVerification) {
+            terminalPrompt.innerText = '⚠️ No face detected. Align face inside box.';
+            terminalPrompt.className = 'terminal-guide-prompt';
+          }
         }
 
       } catch (err) {
@@ -904,6 +1053,12 @@ const uiController = {
     overlay.style.display = 'flex';
     successBox.style.display = 'block';
 
+    const terminalPrompt = document.getElementById('terminal-guide-prompt');
+    if (terminalPrompt) {
+      terminalPrompt.innerText = `🟢 Welcome, ${match.name}! Marked ${state.terminalMode}.`;
+      terminalPrompt.className = 'terminal-guide-prompt success';
+    }
+
     // Show verification profile details
     document.getElementById('last-verif-empty').style.display = 'none';
     const profile = document.getElementById('last-verif-profile');
@@ -918,6 +1073,11 @@ const uiController = {
       overlay.style.display = 'none';
       successBox.style.display = 'none';
       
+      if (terminalPrompt) {
+        terminalPrompt.innerText = 'Awaiting face...';
+        terminalPrompt.className = 'terminal-guide-prompt';
+      }
+
       // Reset detection states
       state.livenessBlinked = false;
       state.livenessVariancePassed = false;
@@ -975,6 +1135,7 @@ const uiController = {
     
     this.updateAngleGridUI();
     document.getElementById('btn-start-capture').style.display = 'none';
+    document.getElementById('btn-manual-capture').style.display = 'inline-flex';
     document.getElementById('btn-reset-capture').style.display = 'inline-flex';
     
     // Start automatic pose checker
@@ -986,6 +1147,7 @@ const uiController = {
     state.enrollmentSamples = [null, null, null, null, null];
     this.updateAngleGridUI();
     document.getElementById('btn-start-capture').style.display = 'inline-flex';
+    document.getElementById('btn-manual-capture').style.display = 'none';
     document.getElementById('btn-reset-capture').style.display = 'none';
     document.getElementById('btn-submit-enrollment').disabled = true;
     document.getElementById('enroll-guide-prompt').innerText = 'Fill details and click "Start Face Capture"';
@@ -1019,8 +1181,8 @@ const uiController = {
     const guideCircle = document.getElementById('enroll-guide-overlay').querySelector('.guide-circle');
     const prompt = document.getElementById('enroll-guide-prompt');
 
-    const displaySize = { width: video.videoWidth || 640, height: video.videoHeight || 480 };
-    faceapi.matchDimensions(canvas, displaySize);
+    // Initialize/Reset pose history cache
+    state.enrollPoseHistory = { yaws: [], pitches: [] };
 
     const guidePrompts = [
       'Angle 1: Look straight at the camera',
@@ -1036,7 +1198,7 @@ const uiController = {
       if (!state.enrollmentActive || !state.cameraStream || state.currentEnrollAngle >= 5) return;
 
       try {
-        const option = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+        const option = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
         const result = await faceapi.detectSingleFace(video, option)
           .withFaceLandmarks(true)
           .withFaceDescriptor();
@@ -1045,48 +1207,124 @@ const uiController = {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (result) {
-          guideCircle.className = 'guide-circle scanning';
-          prompt.innerText = guidePrompts[state.currentEnrollAngle];
-          
-          // Draw simple landmarks bounding overlay box on canvas
+          // Dynamically adjust and retrieve correct canvas dimensions matching video resolution
+          const displaySize = syncCanvasSize(video, canvas);
           const resized = faceapi.resizeResults(result, displaySize);
-          ctx.beginPath();
-          ctx.lineWidth = "2";
-          ctx.strokeStyle = "#3B82F6";
-          ctx.arc(resized.detection.box.x + resized.detection.box.width/2, resized.detection.box.y + resized.detection.box.height/2, 90, 0, 2 * Math.PI);
-          ctx.stroke();
+          
+          // Draw advanced biometric wireframe facemask
+          drawBiometricFacemask(ctx, resized.landmarks, displaySize, false);
 
-          // Pose calculation
+          // Raw pose calculations
           const pose = bioEngine.estimatePose(result.landmarks);
+
+          // Moving average filter to smooth pose jitter
+          state.enrollPoseHistory.yaws.push(pose.yawRatio);
+          state.enrollPoseHistory.pitches.push(pose.pitchRatio);
+          if (state.enrollPoseHistory.yaws.length > 5) {
+            state.enrollPoseHistory.yaws.shift();
+            state.enrollPoseHistory.pitches.shift();
+          }
+
+          const smoothedYaw = state.enrollPoseHistory.yaws.reduce((a, b) => a + b, 0) / state.enrollPoseHistory.yaws.length;
+          const smoothedPitch = state.enrollPoseHistory.pitches.reduce((a, b) => a + b, 0) / state.enrollPoseHistory.pitches.length;
+
+          // Re-evaluate labels based on smoothed ratios
+          let smoothedYawLabel = 'Front';
+          if (smoothedYaw < 0.82) smoothedYawLabel = 'Left';
+          else if (smoothedYaw > 1.22) smoothedYawLabel = 'Right';
+
+          let smoothedPitchLabel = 'Center';
+          if (smoothedPitch < 0.29) smoothedPitchLabel = 'Up';
+          else if (smoothedPitch > 0.41) smoothedPitchLabel = 'Down';
 
           // Check if current pose matches target angle
           let isMatch = false;
+          let guidanceText = '';
           
           switch (state.currentEnrollAngle) {
-            case 0: // Front
-              isMatch = pose.yawLabel === 'Front' && pose.pitchLabel === 'Center';
+            case 0: // Front (Center)
+              isMatch = smoothedYawLabel === 'Front' && smoothedPitchLabel === 'Center';
+              if (isMatch) {
+                guidanceText = `🟢 Center aligned! Hold still...`;
+              } else {
+                if (smoothedYawLabel === 'Left') {
+                  guidanceText = `⚠️ Looking LEFT. Please look straight at the center.`;
+                } else if (smoothedYawLabel === 'Right') {
+                  guidanceText = `⚠️ Looking RIGHT. Please look straight at the center.`;
+                } else if (smoothedPitchLabel === 'Up') {
+                  guidanceText = `⚠️ Looking UP. Please look straight at the center.`;
+                } else if (smoothedPitchLabel === 'Down') {
+                  guidanceText = `⚠️ Looking DOWN. Please look straight at the center.`;
+                } else {
+                  guidanceText = `⚠️ Please look straight at the camera.`;
+                }
+              }
               break;
             case 1: // Left
-              isMatch = pose.yawLabel === 'Left';
+              isMatch = smoothedYawLabel === 'Left';
+              if (isMatch) {
+                guidanceText = `🟢 Left aligned! Hold still...`;
+              } else {
+                if (smoothedYawLabel === 'Right') {
+                  guidanceText = `👉 Looking RIGHT. Please turn your head to the LEFT.`;
+                } else {
+                  guidanceText = `👉 Please turn your head slightly to the LEFT.`;
+                }
+              }
               break;
             case 2: // Right
-              isMatch = pose.yawLabel === 'Right';
+              isMatch = smoothedYawLabel === 'Right';
+              if (isMatch) {
+                guidanceText = `🟢 Right aligned! Hold still...`;
+              } else {
+                if (smoothedYawLabel === 'Left') {
+                  guidanceText = `👈 Looking LEFT. Please turn your head to the RIGHT.`;
+                } else {
+                  guidanceText = `👈 Please turn your head slightly to the RIGHT.`;
+                }
+              }
               break;
             case 3: // Up
-              isMatch = pose.pitchLabel === 'Up';
+              isMatch = smoothedPitchLabel === 'Up';
+              if (isMatch) {
+                guidanceText = `🟢 Upward aligned! Hold still...`;
+              } else {
+                if (smoothedPitchLabel === 'Down') {
+                  guidanceText = `👆 Looking DOWN. Please tilt your head UPWARD.`;
+                } else {
+                  guidanceText = `👆 Please tilt your head slightly UPWARD.`;
+                }
+              }
               break;
             case 4: // Down
-              isMatch = pose.pitchLabel === 'Down';
+              isMatch = smoothedPitchLabel === 'Down';
+              if (isMatch) {
+                guidanceText = `🟢 Downward aligned! Hold still...`;
+              } else {
+                if (smoothedPitchLabel === 'Up') {
+                  guidanceText = `👇 Looking UP. Please tilt your head DOWNWARD.`;
+                } else {
+                  guidanceText = `👇 Please tilt your head slightly DOWNWARD.`;
+                }
+              }
               break;
           }
 
-          if (isMatch) {
-            framesInPosition++;
-            prompt.innerText = `HOLD STILL... ${Math.round((framesInPosition / 15) * 100)}%`;
-            ctx.strokeStyle = "#10B981";
-            ctx.stroke();
+          prompt.innerText = guidanceText;
 
-            if (framesInPosition >= 15) { // about 1 second of stable pose
+          // Draw real-time alignment numbers on canvas
+          const box = resized.detection.box;
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "11px JetBrains Mono";
+          ctx.fillText(`Accuracy: ${Math.round(result.detection.score * 100)}%`, box.x, box.y - 25);
+          ctx.fillText(`Yaw: ${smoothedYaw.toFixed(2)} (${smoothedYawLabel}), Pitch: ${smoothedPitch.toFixed(2)} (${smoothedPitchLabel})`, box.x, box.y - 10);
+
+          if (isMatch) {
+            guideCircle.className = 'guide-circle aligned';
+            framesInPosition++;
+            prompt.innerText = `${guidanceText} (${Math.round((framesInPosition / 8) * 100)}%)`;
+
+            if (framesInPosition >= 8) { // stable hold of 8 frames (~400ms-500ms)
               // Save embedding sample
               state.enrollmentSamples[state.currentEnrollAngle] = result.descriptor;
               sysLog(`Captured biometric embedding for angle ${state.currentEnrollAngle + 1}/5.`, 'success');
@@ -1094,24 +1332,28 @@ const uiController = {
               
               state.currentEnrollAngle++;
               framesInPosition = 0;
+              // Reset smoothing queue for the next angle
+              state.enrollPoseHistory = { yaws: [], pitches: [] };
               this.updateAngleGridUI();
 
               if (state.currentEnrollAngle >= 5) {
                 // Done!
                 prompt.innerText = 'All angles captured. Ready to register!';
                 guideCircle.className = 'guide-circle';
+                document.getElementById('btn-manual-capture').style.display = 'none';
                 document.getElementById('btn-submit-enrollment').disabled = false;
                 sysLog('Workforce facial enrollment complete. Form ready for registration.');
                 return; // stop loop
               }
             }
           } else {
+            guideCircle.className = 'guide-circle scanning';
             framesInPosition = 0; // reset
           }
 
         } else {
           guideCircle.className = 'guide-circle';
-          prompt.innerText = 'Align face inside target circle';
+          prompt.innerText = '⚠️ No face detected. Align face inside circle.';
           framesInPosition = 0;
         }
 
@@ -1151,6 +1393,42 @@ const uiController = {
     } catch (err) {
       sysLog(`Registration write failed: ${err.message}`, 'error');
       alert('Failed to register employee: ' + err.message);
+    }
+  },
+
+  async captureAngleManually() {
+    const video = document.getElementById('enrollment-video');
+    if (!state.enrollmentActive || !state.cameraStream || state.currentEnrollAngle >= 5) return;
+    
+    sysLog(`Manual trigger: capturing embedding for angle ${state.currentEnrollAngle + 1}...`);
+    try {
+      const option = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 });
+      const result = await faceapi.detectSingleFace(video, option)
+        .withFaceLandmarks(true)
+        .withFaceDescriptor();
+        
+      if (result) {
+        state.enrollmentSamples[state.currentEnrollAngle] = result.descriptor;
+        sysLog(`Successfully manual captured angle ${state.currentEnrollAngle + 1}/5!`, 'success');
+        playFeedback(true);
+        
+        state.currentEnrollAngle++;
+        this.updateAngleGridUI();
+        
+        const prompt = document.getElementById('enroll-guide-prompt');
+        if (state.currentEnrollAngle >= 5) {
+          prompt.innerText = 'All angles captured. Ready to register!';
+          document.getElementById('btn-manual-capture').style.display = 'none';
+          document.getElementById('btn-submit-enrollment').disabled = false;
+          sysLog('Workforce facial enrollment complete. Form ready.');
+        }
+      } else {
+        alert('Could not capture face. Please ensure your face is fully visible in the camera frame.');
+        sysLog('Manual capture failed: No face detected.', 'error');
+      }
+    } catch (err) {
+      console.error('Error in manual capture:', err);
+      sysLog(`Manual capture error: ${err.message}`, 'error');
     }
   },
 

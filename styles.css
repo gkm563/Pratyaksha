@@ -1217,6 +1217,17 @@ body {
   100% { transform: scale(1.03); border-color: var(--color-blue); }
 }
 
+.guide-circle.aligned {
+  border-color: var(--color-green) !important;
+  animation: borderPulseGreen 0.5s infinite alternate !important;
+  box-shadow: var(--shadow-glow-green);
+}
+
+@keyframes borderPulseGreen {
+  0% { transform: scale(1); border-color: rgba(16, 185, 129, 0.3); }
+  100% { transform: scale(1.05); border-color: var(--color-green); }
+}
+
 .guide-prompt {
   font-size: 12px;
   background: rgba(15, 23, 42, 0.85);
@@ -1226,6 +1237,42 @@ body {
   border: 1px solid var(--border-color);
   font-weight: 500;
   text-align: center;
+}
+
+/* Terminal Guidance Prompt CSS Rules */
+.terminal-guide-overlay {
+  position: absolute;
+  bottom: 15px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.terminal-guide-prompt {
+  font-size: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  color: var(--text-primary);
+  padding: 6px 14px;
+  border-radius: 30px;
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+  text-align: center;
+  font-family: var(--font-sans);
+  transition: all 0.2s ease;
+}
+
+.terminal-guide-prompt.warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.15);
+}
+
+.terminal-guide-prompt.success {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+  color: var(--color-green);
 }
 
 /* Capture Angle Grid */
