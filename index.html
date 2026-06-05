@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pratyaksha — Offline Biometric Attendance Platform</title>
+  
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  
+  <!-- CSS Styles -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- vladmandic face-api bundle (includes TFJS) -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+</head>
+<body>
+
+  <!-- App Container -->
+  <div class="app-container">
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <i class="ti ti-scan-eye"></i>
+        </div>
+        <div class="brand-text">
+          <h1>Pratyaksha</h1>
+          <span>OFFLINE BIOMETRICS</span>
+        </div>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-target="dashboard">
+          <i class="ti ti-dashboard"></i>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-item" data-target="terminal">
+          <i class="ti ti-camera-selfie"></i>
+          <span>Attendance Terminal</span>
+        </button>
+        <button class="nav-item" data-target="enrollment">
+          <i class="ti ti-user-plus"></i>
+          <span>Worker Enrollment</span>
+        </button>
+        <button class="nav-item" data-target="logs">
+          <i class="ti ti-history"></i>
+          <span>Attendance Logs</span>
+          <span class="badge badge-warning" id="pending-sync-badge" style="display: none;">0</span>
+        </button>
+        <button class="nav-item" data-target="diagnostics">
+          <i class="ti ti-cpu"></i>
+          <span>Diagnostics &amp; System</span>
+        </button>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div class="connection-status offline" id="net-indicator-sidebar">
+          <div class="status-dot"></div>
+          <span class="status-label">Offline Mode</span>
+        </div>
+        <div class="app-version">v1.0.0 (Build via Antigravity)</div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Top Navbar -->
+      <header class="top-navbar">
+        <div class="nav-title-area">
+          <h2 id="current-view-title">Dashboard Overview</h2>
+          <p id="current-view-subtitle">Real-time on-device metrics &amp; synchronization status</p>
+        </div>
+        
+        <div class="nav-actions">
+          <!-- Quick Offline toggle -->
+          <div class="network-sim-control">
+            <span class="control-label">Network Sync:</span>
+            <label class="switch">
+              <input type="checkbox" id="network-toggle" checked>
+              <span class="slider round"></span>
+            </label>
+            <span class="control-status online" id="net-toggle-label">Online</span>
+          </div>
+
+          <div class="time-display" id="clock-display">
+            00:00:00 AM
+          </div>
+        </div>
+      </header>
+
+      <!-- View Containers -->
+      <div class="view-viewport">
+
+        <!-- 1. DASHBOARD VIEW -->
+        <section class="view-panel active" id="view-dashboard">
+          <!-- Metric Widgets Grid -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Enrolled Workforce</span>
+                <i class="ti ti-users text-blue"></i>
+              </div>
+              <div class="metric-value" id="stat-enrolled">0</div>
+              <div class="metric-subtext">Registered identities on-device</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Present Today</span>
+                <i class="ti ti-user-check text-green"></i>
+              </div>
+              <div class="metric-value" id="stat-present">0</div>
+              <div class="metric-subtext" id="stat-present-sub">0% attendance rate</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Sync Queue (Pending)</span>
+                <i class="ti ti-cloud-upload text-amber"></i>
+              </div>
+              <div class="metric-value" id="stat-pending">0</div>
+              <div class="metric-subtext">Awaiting network connection</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">System Status</span>
+                <i class="ti ti-shield-check text-blue" id="system-health-icon"></i>
+              </div>
+              <div class="metric-value text-normal" id="stat-health">Loading...</div>
+              <div class="metric-subtext" id="stat-health-sub">Models initializing</div>
+            </div>
+          </div>
+
+          <!-- Mid Section Details -->
+          <div class="dashboard-details-grid">
+            <!-- Attendance History chart simulation -->
+            <div class="details-card history-card">
+              <h3>Attendance Trend (Last 7 Days)</h3>
+              <div class="chart-container">
+                <div class="mock-chart">
+                  <div class="chart-bar-col">
+                    <div class="chart-bar" style="height: 78%;" data-val="78%">
+                      <span class="bar-tooltip">78% (39 Present)</span>
+                    </div>
+                    <span class="chart-label">Mon</span>
+                  </div>
+                  <div class="chart-bar-col">
+                    <div class="chart-bar" style="height: 84%;" data-val="84%">
+                      <span class="bar-tooltip">84% (42 Present)</span>
+                    </div>
+                    <span class="chart-label">Tue</span>
+                  </div>
+                  <div class="chart-bar-col">
+                    <div class="chart-bar" style="height: 80%;" data-val="80%">
+                      <span class="bar-tooltip">80% (40 Present)</span>
+                    </div>
+                    <span class="chart-label">Wed</span>
+                  </div>
+                  <div class="chart-bar-col">
+                    <div class="chart-bar" style="height: 92%;" data-val="92%">
+                      <span class="bar-tooltip">92% (46 Present)</span>
+                    </div>
+                    <span class="chart-label">Thu</span>
+                  </div>
+                  <div class="chart-bar-col">
+                    <div class="chart-bar" style="height: 88%;" data-val="88%">
+                      <span class="bar-tooltip">88% (44 Present)</span>
+                    </div>
+                    <span class="chart-label">Fri</span>
+                  </div>
+                  <div class="chart-bar-col">
+                    <div class="chart-bar" style="height: 45%;" data-val="45%">
+                      <span class="bar-tooltip">45% (22 Present)</span>
+                    </div>
+                    <span class="chart-label">Sat</span>
+                  </div>
+                  <div class="chart-bar-col">
+                    <div class="chart-bar highlight" id="today-bar" style="height: 0%;" data-val="0%">
+                      <span class="bar-tooltip" id="today-bar-tooltip">0% Present</span>
+                    </div>
+                    <span class="chart-label font-bold">Today</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent logs checklist -->
+            <div class="details-card notifications-card">
+              <h3>Recent Attendance Logs</h3>
+              <div class="recent-logs-list" id="dashboard-recent-logs">
+                <div class="empty-state">
+                  <i class="ti ti-inbox"></i>
+                  <p>No check-ins logged today</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 2. ATTENDANCE TERMINAL VIEW -->
+        <section class="view-panel" id="view-terminal">
+          <div class="terminal-layout">
+            
+            <!-- Left: Camera Viewfinder -->
+            <div class="terminal-camera-box">
+              <div class="camera-stream-wrapper">
+                <video id="terminal-video" autoplay muted playsinline></video>
+                <canvas id="terminal-canvas"></canvas>
+                
+                <!-- Camera Overlay Scanner UI -->
+                <div class="camera-overlay-scanner" id="camera-scanner">
+                  <div class="scan-line"></div>
+                  <div class="corner-border top-left"></div>
+                  <div class="corner-border top-right"></div>
+                  <div class="corner-border bottom-left"></div>
+                  <div class="corner-border bottom-right"></div>
+                </div>
+
+                <!-- Match Overlay UI -->
+                <div class="match-result-overlay" id="match-overlay">
+                  <div class="overlay-card success" id="match-overlay-success" style="display: none;">
+                    <div class="icon-ring pulse"><i class="ti ti-circle-check"></i></div>
+                    <h4 id="match-name-success">Verification Success</h4>
+                    <p id="match-meta-success">Check-in Registered Successfully</p>
+                  </div>
+                  <div class="overlay-card failure" id="match-overlay-failure" style="display: none;">
+                    <div class="icon-ring"><i class="ti ti-circle-x"></i></div>
+                    <h4 id="match-name-failure">Access Denied</h4>
+                    <p id="match-meta-failure">Liveness Verification Failed</p>
+                  </div>
+                </div>
+
+                <!-- Camera Loading screen -->
+                <div class="camera-placeholder" id="camera-loading-screen">
+                  <div class="spinner"></div>
+                  <p id="camera-loading-text">Initializing Face Recognition Engine...</p>
+                </div>
+              </div>
+
+              <!-- Action buttons for Terminal -->
+              <div class="terminal-controls">
+                <div class="terminal-modes">
+                  <button class="mode-btn active" id="btn-mode-checkin" data-mode="Check-In">
+                    <i class="ti ti-login"></i> Check-In
+                  </button>
+                  <button class="mode-btn" id="btn-mode-checkout" data-mode="Check-Out">
+                    <i class="ti ti-logout"></i> Check-Out
+                  </button>
+                </div>
+                <div class="terminal-indicator-info">
+                  <span id="terminal-mode-label">Mode: CHECK-IN</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Real-time status panel -->
+            <div class="terminal-status-panel">
+              <!-- Verification checklist -->
+              <div class="status-card verification-checklist">
+                <h3>Recognition Pipeline</h3>
+                <ul class="checklist">
+                  <li class="checklist-item" id="check-face-detected">
+                    <div class="status-circle"><i class="ti ti-circle"></i></div>
+                    <span class="check-text">Face Detected in View</span>
+                  </li>
+                  <li class="checklist-item" id="check-liveness-passed">
+                    <div class="status-circle"><i class="ti ti-circle"></i></div>
+                    <span class="check-text">Liveness Check (Active/Passive)</span>
+                    <span class="score-pill" id="liveness-score" style="display: none;">98%</span>
+                  </li>
+                  <li class="checklist-item" id="check-match-found">
+                    <div class="status-circle"><i class="ti ti-circle"></i></div>
+                    <span class="check-text">Biometric Database Match</span>
+                    <span class="score-pill" id="confidence-score" style="display: none;">0.82</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Quick details of last identified user -->
+              <div class="status-card last-verification-card" id="last-verification-details">
+                <h3>Last Verification</h3>
+                <div class="empty-state" id="last-verif-empty">
+                  <i class="ti ti-user"></i>
+                  <p>Awaiting face scan</p>
+                </div>
+                <div class="verif-profile" id="last-verif-profile" style="display: none;">
+                  <div class="avatar-replacement"><i class="ti ti-user"></i></div>
+                  <div class="verif-profile-info">
+                    <h4 id="verif-profile-name">Rahul Sharma</h4>
+                    <p id="verif-profile-id">EMP-29402</p>
+                    <span class="dept-badge" id="verif-profile-dept">Engineering</span>
+                  </div>
+                  <div class="verif-time-badge" id="verif-profile-time">10:43 AM</div>
+                </div>
+              </div>
+
+              <!-- Operational guidance -->
+              <div class="status-card guidance-card">
+                <h3>Supervisor Guidance</h3>
+                <p>1. Center the worker's face inside the camera viewfinder.</p>
+                <p>2. Keep the phone stable. Ensure adequate lighting (no high-glare background).</p>
+                <p>3. Ask the worker to blink or turn their head slightly for liveness detection.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 3. WORKER ENROLLMENT VIEW -->
+        <section class="view-panel" id="view-enrollment">
+          <div class="enrollment-layout">
+            <!-- Left Form -->
+            <div class="enrollment-form-box">
+              <h3>Employee Identity Registration</h3>
+              <form id="enrollment-form" onsubmit="return false;">
+                <div class="form-group">
+                  <label for="enroll-name">Full Name *</label>
+                  <input type="text" id="enroll-name" placeholder="e.g. Priyanjali Sen" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="enroll-id">Employee ID / Code *</label>
+                  <input type="text" id="enroll-id" placeholder="e.g. EMP-10394" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="enroll-dept">Department *</label>
+                  <select id="enroll-dept" required>
+                    <option value="" disabled selected>Select Department</option>
+                    <option value="Operations">Operations</option>
+                    <option value="Production">Production</option>
+                    <option value="Quality Control">Quality Control</option>
+                    <option value="Engineering">Engineering</option>
+                    <option value="Administration">Administration</option>
+                  </select>
+                </div>
+
+                <!-- Registration Instructions -->
+                <div class="form-note">
+                  <i class="ti ti-info-circle"></i>
+                  <div>
+                    <strong>Data Privacy Policy (DPDP Act 2023)</strong>
+                    <p>Facial embeddings are converted to mathematical vectors (128-dimensional floating values) and stored locally. Raw camera frames are deleted immediately after vector extraction and never persisted.</p>
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="btn-submit-enrollment" disabled>
+                  <i class="ti ti-user-plus"></i> Save &amp; Register Employee
+                </button>
+              </form>
+            </div>
+
+            <!-- Right Biometric Capture Wizard -->
+            <div class="enrollment-capture-box">
+              <h3>Facial Embedding Capture Pipeline</h3>
+              
+              <div class="enrollment-camera-wrapper">
+                <video id="enrollment-video" autoplay muted playsinline></video>
+                <canvas id="enrollment-canvas"></canvas>
+                
+                <div class="enroll-guide-overlay" id="enroll-guide-overlay">
+                  <div class="guide-circle"></div>
+                  <div class="guide-prompt" id="enroll-guide-prompt">Initialize camera to start</div>
+                </div>
+
+                <div class="camera-placeholder" id="enrollment-loading-screen">
+                  <div class="spinner"></div>
+                  <p>Starting enrollment pipeline...</p>
+                </div>
+              </div>
+
+              <!-- Capture Angle Grid -->
+              <div class="capture-angle-grid">
+                <div class="angle-card" id="angle-front" data-angle="0">
+                  <div class="angle-icon"><i class="ti ti-camera"></i></div>
+                  <span class="angle-label">1. Front</span>
+                  <div class="angle-status"><i class="ti ti-circle"></i></div>
+                </div>
+                <div class="angle-card" id="angle-left" data-angle="1">
+                  <div class="angle-icon"><i class="ti ti-chevron-left"></i></div>
+                  <span class="angle-label">2. Left</span>
+                  <div class="angle-status"><i class="ti ti-circle"></i></div>
+                </div>
+                <div class="angle-card" id="angle-right" data-angle="2">
+                  <div class="angle-icon"><i class="ti ti-chevron-right"></i></div>
+                  <span class="angle-label">3. Right</span>
+                  <div class="angle-status"><i class="ti ti-circle"></i></div>
+                </div>
+                <div class="angle-card" id="angle-up" data-angle="3">
+                  <div class="angle-icon"><i class="ti ti-chevron-up"></i></div>
+                  <span class="angle-label">4. Up</span>
+                  <div class="angle-status"><i class="ti ti-circle"></i></div>
+                </div>
+                <div class="angle-card" id="angle-down" data-angle="4">
+                  <div class="angle-icon"><i class="ti ti-chevron-down"></i></div>
+                  <span class="angle-label">5. Down</span>
+                  <div class="angle-status"><i class="ti ti-circle"></i></div>
+                </div>
+              </div>
+
+              <div class="enrollment-actions">
+                <button class="btn btn-secondary" id="btn-start-capture">
+                  <i class="ti ti-video"></i> Start Face Capture
+                </button>
+                <button class="btn btn-danger" id="btn-reset-capture" style="display: none;">
+                  <i class="ti ti-refresh"></i> Reset Captures
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 4. ATTENDANCE LOGS VIEW -->
+        <section class="view-panel" id="view-logs">
+          <div class="logs-header-actions">
+            <!-- Filters -->
+            <div class="filters-row">
+              <div class="search-input">
+                <i class="ti ti-search"></i>
+                <input type="text" id="log-search" placeholder="Search by name or ID...">
+              </div>
+              <select id="filter-dept">
+                <option value="">All Departments</option>
+                <option value="Operations">Operations</option>
+                <option value="Production">Production</option>
+                <option value="Quality Control">Quality Control</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Administration">Administration</option>
+              </select>
+              <select id="filter-sync">
+                <option value="">All Sync States</option>
+                <option value="synced">Synced (Cloud)</option>
+                <option value="pending">Pending (Local)</option>
+              </select>
+            </div>
+
+            <!-- Global Action Buttons -->
+            <div class="global-actions">
+              <button class="btn btn-secondary" id="btn-export-csv">
+                <i class="ti ti-file-export"></i> Export CSV
+              </button>
+              <button class="btn btn-primary" id="btn-manual-sync">
+                <i class="ti ti-refresh"></i> Sync Queue Now
+              </button>
+            </div>
+          </div>
+
+          <!-- Logs Table Card -->
+          <div class="details-card logs-table-card">
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Employee ID</th>
+                    <th>Worker Name</th>
+                    <th>Department</th>
+                    <th>Type</th>
+                    <th>Confidence</th>
+                    <th>Liveness</th>
+                    <th>Sync Status</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-table-body">
+                  <tr>
+                    <td colspan="8" class="text-center text-muted py-4">
+                      <i class="ti ti-inbox" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
+                      No attendance logs recorded yet.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 5. DIAGNOSTICS & SYSTEM VIEW -->
+        <section class="view-panel" id="view-diagnostics">
+          <div class="diagnostics-layout">
+            
+            <!-- System Stats and Toggles -->
+            <div class="diagnostics-left">
+              
+              <!-- Engine Info -->
+              <div class="details-card">
+                <h3>Neural Engine Status</h3>
+                <div class="engine-status-list">
+                  <div class="status-row">
+                    <span class="status-lbl">TensorFlow.js Backend:</span>
+                    <span class="status-val font-mono" id="diag-tfjs-backend">Webgl</span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-lbl">TinyFaceDetector Model:</span>
+                    <span class="status-val" id="diag-model-detector"><span class="pill pill-warning">Loading...</span></span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-lbl">FaceLandmark68 Model:</span>
+                    <span class="status-val" id="diag-model-landmark"><span class="pill pill-warning">Loading...</span></span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-lbl">FaceRecognition Model:</span>
+                    <span class="status-val" id="diag-model-recognition"><span class="pill pill-warning">Loading...</span></span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-lbl">Local Database (IndexedDB):</span>
+                    <span class="status-val text-green" id="diag-db-status">Active</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Mock Data Seed -->
+              <div class="details-card">
+                <h3>Database Actions</h3>
+                <p style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 1rem; line-height: 1.5;">
+                  Quickly test the system by generating dummy employees. This seeds the local database with pre-trained mock embeddings of fictional employees (you can simulate check-ins in the Diagnostics tab).
+                </p>
+                <div class="actions-row">
+                  <button class="btn btn-secondary" id="btn-seed-data">
+                    <i class="ti ti-database-import"></i> Seed Sample Employees
+                  </button>
+                  <button class="btn btn-danger" id="btn-clear-db">
+                    <i class="ti ti-trash"></i> Reset Database
+                  </button>
+                </div>
+              </div>
+
+              <!-- Sync Configurations -->
+              <div class="details-card">
+                <h3>Cloud Sync Settings</h3>
+                <div class="form-group" style="margin-top: 0;">
+                  <label for="sync-endpoint">Cloud Sync Server Endpoint</label>
+                  <input type="text" id="sync-endpoint" value="http://localhost:3000/api/sync" class="font-mono">
+                </div>
+                <div class="form-group">
+                  <label for="sync-interval">Auto-Sync Retry Interval</label>
+                  <select id="sync-interval">
+                    <option value="5000">Every 5 Seconds</option>
+                    <option value="15000" selected>Every 15 Seconds</option>
+                    <option value="60000">Every 1 Minute</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Logs / Diagnostics terminal console -->
+            <div class="diagnostics-right">
+              <div class="details-card console-card">
+                <div class="console-header">
+                  <h3>Real-time System Logs</h3>
+                  <button class="btn-icon" id="btn-clear-console" title="Clear Console"><i class="ti ti-eraser"></i></button>
+                </div>
+                <div class="console-terminal" id="system-console">
+                  <div class="log-line info">[System] Welcome to Pratyaksha Diagnostic Console.</div>
+                  <div class="log-line info">[System] Initializing IndexedDB Local Database...</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Audio Elements for Feedback -->
+  <audio id="audio-success" src="https://assets.mixkit.co/active_storage/sfx/2019/2019-84.wav" preload="auto"></audio>
+  <audio id="audio-failure" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav" preload="auto"></audio>
+
+  <!-- JS Code -->
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Dependency directories
+node_modules/
+
+# Local model weights (binary files)
+models/*.bin
+
+# System / IDE files
+.DS_Store
+.vscode/
+.idea/
+.gemini/

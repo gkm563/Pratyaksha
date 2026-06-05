@@ -1,0 +1,19 @@
+{
+  "name": "pratyaksha",
+  "version": "1.0.0",
+  "description": "Offline Workforce Identity & Attendance Platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "download-models": "node download-models.js"
+  },
+  "keywords": [
+    "biometric",
+    "attendance",
+    "face-recognition",
+    "offline-first",
+    "pwa"
+  ],
+  "author": "Antigravity AI Agent",
+  "license": "MIT"
+}
